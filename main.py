@@ -2098,7 +2098,4 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    if hasattr(ft, "run"):
-        ft.run(main, view=ft.AppView.WEB_BROWSER, port=8550)
-    else:
-        ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8550)
+    ft.run(main)
