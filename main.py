@@ -74,19 +74,15 @@ DOSE_ERROR = "Количество за приём: целое число от 1
 TRACKER_SECTIONS = ("habits", "pills", "profile", "settings", "users", "session")
 
 
+# --- Вспомогательные функции ---
+
 def text_button(label, **kwargs):
-    return ft.Button(
-        content=label,
-        style=ft.ButtonStyle(
-            bgcolor=ft.Colors.TRANSPARENT,
-            color=ft.Colors.PRIMARY,
-            elevation=0,
-        ),
-        **kwargs,
-    )
+    """Современная текстовая кнопка (Flet 0.20+)."""
+    return ft.TextButton(label, **kwargs)
 
 
 def data_path():
+    """Возвращает путь к файлу с данными."""
     folder = os.getenv("FLET_APP_STORAGE_DATA")
     if not folder:
         try:
@@ -98,16 +94,19 @@ def data_path():
 
 
 def _hash_password(password, salt=None):
+    """Хеширует пароль с солью."""
     salt = salt or uuid.uuid4().hex
     digest = hashlib.sha256(f"{salt}:{password}".encode("utf-8")).hexdigest()
     return salt, digest
 
 
 def monday_of(day):
+    """Возвращает понедельник недели, в которой находится day."""
     return day - timedelta(days=day.weekday())
 
 
 def week_label(start):
+    """Формирует читаемый заголовок недели."""
     end = start + timedelta(days=5)
     if start.month == end.month:
         label = f"{start.day}–{end.day} {MONTHS[end.month - 1]}"
@@ -117,16 +116,19 @@ def week_label(start):
 
 
 def valid_grade(value):
+    """Проверяет, что значение — целая оценка от 1 до 10."""
     s = str(value).strip()
     return s.isdecimal() and 1 <= int(s) <= 10
 
 
 def valid_lesson_number(number):
+    """Проверяет, что номер урока в диапазоне 1–7."""
     s = str(number)
     return s.isdecimal() and 1 <= int(s) <= 7
 
 
 def lesson_subject(day, number, custom=""):
+    """Возвращает название предмета: либо кастомное, либо из расписания."""
     if custom:
         return str(custom)
     template = SCHEDULE[day]
@@ -134,6 +136,7 @@ def lesson_subject(day, number, custom=""):
 
 
 def grades_word(count):
+    """Правильное склонение слова «оценка/оценки/оценок»."""
     if 11 <= count % 100 <= 14:
         return "оценок"
     last = count % 10
@@ -142,7 +145,18 @@ def grades_word(count):
     return "оценки" if 2 <= last <= 4 else "оценок"
 
 
+def homework_word(count):
+    """Правильное склонение для «задание/задания/заданий»."""
+    if 11 <= count % 100 <= 14:
+        return "заданий"
+    last = count % 10
+    if last == 1:
+        return "задание"
+    return "задания" if 2 <= last <= 4 else "заданий"
+
+
 def parse_target(raw):
+    """Парсит целевой балл."""
     text = str(raw or "").replace(",", ".").strip()
     try:
         value = float(text)
@@ -154,6 +168,7 @@ def parse_target(raw):
 
 
 def parse_time(raw):
+    """Парсит время в формате ЧЧ:ММ."""
     try:
         return datetime.strptime(str(raw or "").strip(), "%H:%M").strftime("%H:%M")
     except ValueError as err:
@@ -161,6 +176,7 @@ def parse_time(raw):
 
 
 def parse_count(raw, low, high, error):
+    """Парсит число в заданном диапазоне."""
     try:
         value = int(str(raw or "").strip())
     except ValueError as exc:
@@ -171,6 +187,7 @@ def parse_count(raw, low, high, error):
 
 
 def _as_int(value, default=0):
+    """Безопасное преобразование в int."""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -178,6 +195,7 @@ def _as_int(value, default=0):
 
 
 def _section(data, name):
+    """Возвращает секцию словаря, создавая её при необходимости."""
     section = data.get(name)
     if not isinstance(section, dict):
         section = {}
@@ -186,6 +204,7 @@ def _section(data, name):
 
 
 def _set_day(data, section_name, item_id, key, day, done):
+    """Добавляет/удаляет день из списка дней предмета."""
     item = _section(data, section_name).get(item_id)
     if not isinstance(item, dict):
         return
@@ -201,6 +220,7 @@ def _set_day(data, section_name, item_id, key, day, done):
 
 
 def streak(days_set, today):
+    """Считает текущую серию дней подряд."""
     current = today if today.isoformat() in days_set else today - timedelta(days=1)
     count = 0
     while current.isoformat() in days_set:
@@ -208,6 +228,8 @@ def streak(days_set, today):
         current -= timedelta(days=1)
     return count
 
+
+# --- Хранилище данных ---
 
 class Store:
     def __init__(self, path):
@@ -303,7 +325,7 @@ class Store:
                 self.data = snapshot
                 raise
 
-    # --- БЛОК АВТОРИЗАЦИИ И СЕССИЙ ---
+    # --- Блок авторизации ---
 
     @staticmethod
     def _normalize_email(email):
@@ -369,7 +391,7 @@ class Store:
     def logout_user(self):
         self._mutate(lambda d: d.pop("session", None))
 
-    # --- ОСНОВНЫЕ ДАННЫЕ ДНЕВНИКА ---
+    # --- Основные данные дневника ---
 
     def _day_data(self, week, day):
         week_data = self.data["weeks"].get(week)
@@ -379,6 +401,7 @@ class Store:
         return day_data if isinstance(day_data, dict) else {}
 
     def _cell(self, week, day, number):
+        """Возвращает ячейку урока с ДЗ, предметом, оценками и статусом выполнения."""
         value = self._day_data(week, day).get(str(number), {})
         if not isinstance(value, dict):
             value = {}
@@ -397,6 +420,7 @@ class Store:
             "hw": str(value.get("hw") or ""),
             "subject": str(value.get("subject") or ""),
             "grades": safe_grades,
+            "done": bool(value.get("done", False)),  # НОВОЕ: статус выполнения ДЗ
         }
 
     def get(self, week, day, number):
@@ -410,12 +434,14 @@ class Store:
             return sorted(numbers)
 
     def _cleanup(self, week, day):
+        """Удаляет пустые ячейки и пустые дни/недели."""
         week_data = self.data["weeks"].get(week, {})
         day_data = week_data.get(day, {})
         for key in list(day_data):
             if valid_lesson_number(key):
                 cell = self._cell(week, day, int(key))
-                if not cell["hw"].strip() and not cell["subject"] and not cell["grades"]:
+                # Удаляем только если пусто ВСЁ, включая статус выполнения
+                if not cell["hw"].strip() and not cell["subject"] and not cell["grades"] and not cell.get("done"):
                     del day_data[key]
         if not day_data:
             week_data.pop(day, None)
@@ -424,7 +450,8 @@ class Store:
 
     def _store_cell(self, week, day, number, cell):
         day_data = self.data["weeks"].setdefault(week, {}).setdefault(day, {})
-        if cell["hw"].strip() or cell["subject"] or cell["grades"]:
+        # Сохраняем ячейку, если есть хоть что-то: ДЗ, предмет, оценки или статус
+        if cell["hw"].strip() or cell["subject"] or cell["grades"] or cell.get("done"):
             day_data[str(number)] = cell
         else:
             day_data.pop(str(number), None)
@@ -439,6 +466,10 @@ class Store:
 
     def set_homework(self, week, day, number, homework):
         self._update(week, day, number, lambda c: c.update({"hw": str(homework or "").strip()}))
+
+    def set_homework_done(self, week, day, number, done):
+        """НОВОЕ: устанавливает статус выполнения домашнего задания."""
+        self._update(week, day, number, lambda c: c.update({"done": bool(done)}))
 
     def set_subject(self, week, day, number, subject):
         self._update(week, day, number, lambda c: c.update({"subject": str(subject or "").strip()}))
@@ -491,6 +522,31 @@ class Store:
                 for raw in day_data.values()
                 if isinstance(raw, dict) and str(raw.get("hw") or "").strip()
             )
+
+    def homework_for_date(self, target_date):
+        """НОВОЕ: возвращает список домашних заданий на конкретную дату."""
+        # Воскресенье — выходной
+        if target_date.weekday() >= 6:
+            return []
+
+        week_key = monday_of(target_date).isoformat()
+        day_name = DAYS[target_date.weekday()]
+        result = []
+
+        for n in self.lesson_numbers(week_key, day_name):
+            cell = self.get(week_key, day_name, n)
+            subj = lesson_subject(day_name, n, cell["subject"])
+            # Показываем только если есть предмет И задано ДЗ
+            if subj and cell["hw"].strip():
+                result.append({
+                    "number": n,
+                    "subject": subj,
+                    "hw": cell["hw"],
+                    "done": cell.get("done", False),
+                    "week": week_key,
+                    "day": day_name,
+                })
+        return result
 
     def grades_by_subject(self):
         result = {}
@@ -654,6 +710,8 @@ class Store:
         self._mutate(lambda d: _section(d, "profile").update({"name": str(name or "").strip()[:30]}))
 
 
+# --- Расчёты и статистика ---
+
 def target_threshold(target):
     return max(1.0, target - 0.5)
 
@@ -679,17 +737,29 @@ ACHIEVEMENTS = [
     {"title": "Всё под контролем", "text": "Оценки по 5 предметам", "icon": ft.Icons.HUB, "check": lambda s: s["subjects"] >= 5},
     {"title": "Серия привычек", "text": "Привычка 7 дней подряд", "icon": ft.Icons.LOCAL_FIRE_DEPARTMENT, "check": lambda s: s["habit_streak"] >= 7},
     {"title": "Без пропусков", "text": "Таблетки приняты 7 дней", "icon": ft.Icons.SHIELD, "check": lambda s: s["pill_days"] >= 7},
+    # НОВОЕ: достижение за выполнение ДЗ
+    {"title": "Ответственный", "text": "Выполнено 10 домашних заданий", "icon": ft.Icons.CHECK_CIRCLE, "check": lambda s: s["hw_done"] >= 10},
 ]
 
 
 def home_stats(store, today):
     by_subject = store.grades_by_subject()
     values = [item["value"] for records in by_subject.values() for item in records]
+    # НОВОЕ: считаем выполненные ДЗ
+    hw_done = 0
+    for week_data in store.data.get("weeks", {}).values():
+        if isinstance(week_data, dict):
+            for day_data in week_data.values():
+                if isinstance(day_data, dict):
+                    for raw in day_data.values():
+                        if isinstance(raw, dict) and raw.get("done"):
+                            hw_done += 1
     stats = {
         "grades": len(values),
         "average": sum(values) / len(values) if values else 0.0,
         "subjects": len(by_subject),
         "homework": store.count_homework(),
+        "hw_done": hw_done,
     }
     stats.update(store.tracker_stats(today))
     return stats
@@ -700,6 +770,7 @@ def unlocked_achievements(stats):
 
 
 def grade_color(val):
+    """Возвращает цвет для оценки."""
     if val >= 9:
         return ft.Colors.TEAL_400
     if val >= 7:
@@ -716,6 +787,8 @@ def greeting(hour):
         return "Добрый день"
     return "Добрый вечер" if 18 <= hour < 23 else "Доброй ночи"
 
+
+# --- Экран авторизации ---
 
 class AuthView:
     def __init__(self, page: ft.Page, store: Store, on_success):
@@ -753,8 +826,8 @@ class AuthView:
             size=13,
             visible=False,
         )
-        self.submit_btn = ft.Button(
-            content="Войти",
+        self.submit_btn = ft.ElevatedButton(
+            "Войти",
             expand=True,
             on_click=self.handle_submit,
         )
@@ -775,15 +848,15 @@ class AuthView:
             self.subtitle_text.value = "Создай профиль для синхронизации оценок и привычек"
             self.name_field.visible = True
             self.password_field.label = "Пароль (от 6 символов)"
-            self.submit_btn.content = "Создать аккаунт"
-            self.toggle_btn.content = "Уже есть аккаунт? Войти"
+            self.submit_btn.text = "Создать аккаунт"
+            self.toggle_btn.text = "Уже есть аккаунт? Войти"
         else:
             self.title_text.value = "Вход в NEXUS"
             self.subtitle_text.value = "Войди в свой аккаунт, чтобы открыть дневник"
             self.name_field.visible = False
             self.password_field.label = "Пароль"
-            self.submit_btn.content = "Войти"
-            self.toggle_btn.content = "Нет аккаунта? Зарегистрироваться"
+            self.submit_btn.text = "Войти"
+            self.toggle_btn.text = "Нет аккаунта? Зарегистрироваться"
         self.page.update()
 
     def handle_submit(self, event=None):
@@ -826,7 +899,7 @@ class AuthView:
             padding=card_padding,
             border_radius=18,
             bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-            border=ft.Border.all(1, ft.Colors.with_opacity(0.14, ft.Colors.OUTLINE)),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.14, ft.Colors.OUTLINE)),
             content=ft.Column(
                 [
                     ft.Row(
@@ -836,8 +909,8 @@ class AuthView:
                                 height=46,
                                 border_radius=14,
                                 bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY),
-                                border=ft.Border.all(1.5, ft.Colors.PRIMARY),
-                                alignment=ft.Alignment(0, 0),
+                                border=ft.border.all(1.5, ft.Colors.PRIMARY),
+                                alignment=ft.alignment.center,
                                 content=ft.Icon(ft.Icons.SHIELD, color=ft.Colors.PRIMARY, size=24),
                             ),
                             ft.Column([self.title_text, self.subtitle_text], spacing=2, expand=True),
@@ -869,7 +942,7 @@ class AuthView:
         return ft.Container(
             expand=True,
             padding=outer_padding,
-            alignment=ft.Alignment(0, 0),
+            alignment=ft.alignment.center,
             content=ft.Column(
                 [responsive_wrapper],
                 expand=True,
@@ -879,6 +952,8 @@ class AuthView:
             ),
         )
 
+
+# --- Главное приложение ---
 
 class DiaryApp:
     def __init__(self, page: ft.Page, store: Store = None, on_logout=None):
@@ -923,8 +998,8 @@ class DiaryApp:
 
     def _adaptive_page_padding(self):
         if self.is_tablet():
-            return ft.Padding(24, 18, 24, 12)
-        return ft.Padding(12, 10, 12, 8)
+            return ft.padding.only(left=24, right=24, top=18, bottom=12)
+        return ft.padding.only(left=12, right=12, top=10, bottom=8)
 
     def _on_viewport_resize(self, event=None):
         current_tablet = self.is_tablet()
@@ -939,7 +1014,7 @@ class DiaryApp:
         self.page.bgcolor = ft.Colors.SURFACE
 
     def snack(self, message):
-        self.page.show_dialog(ft.SnackBar(content=ft.Text(message), behavior=ft.SnackBarBehavior.FLOATING))
+        self.page.open(ft.SnackBar(content=ft.Text(message), behavior=ft.SnackBarBehavior.FLOATING))
 
     def on_main_nav(self, event):
         self.main_tab = event.control.selected_index
@@ -956,7 +1031,7 @@ class DiaryApp:
             self.render_settings()
 
     def open_dialog(self, title, content, actions):
-        self.page.show_dialog(ft.AlertDialog(
+        self.page.open(ft.AlertDialog(
             modal=True,
             title=ft.Text(title, weight=ft.FontWeight.BOLD),
             content=content,
@@ -971,19 +1046,28 @@ class DiaryApp:
             self.snack(str(error))
             return
         if dialog:
-            self.page.pop_dialog()
+            self.page.close(self.page.overlay[-1] if self.page.overlay else None)
         self.render()
 
     def card_box(self, content, padding=None, border_color=None):
+        """Универсальная карточка с мягкой тенью и закруглёнными углами."""
         if padding is None:
             padding = 20 if self.is_tablet() else 14
         return ft.Container(
             padding=padding,
             border_radius=16,
             bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-            border=ft.Border.all(1, border_color or ft.Colors.with_opacity(0.12, ft.Colors.OUTLINE)),
+            border=ft.border.all(1, border_color or ft.Colors.with_opacity(0.12, ft.Colors.OUTLINE)),
+            shadow=ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=12,
+                color=ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
+                offset=ft.Offset(0, 4),
+            ),
             content=content,
         )
+
+    # --- ГЛАВНЫЙ ЭКРАН ---
 
     def render_home(self):
         stats = home_stats(self.store, date.today())
@@ -1003,8 +1087,10 @@ class DiaryApp:
             else ft.Column([self.habits_card(), self.pills_card()], spacing=gap)
         )
 
+        # НОВОЕ: добавили карточку с ДЗ на завтра
         content_layout = [
             self.home_header(stats),
+            self.tomorrow_card(),
             self.kpi_row(stats),
             trackers_block,
             self.achievements_view(stats),
@@ -1024,6 +1110,18 @@ class DiaryApp:
             return 0
         day = DAYS[today.weekday()]
         week_key = monday_of(today).isoformat()
+        return sum(
+            1 for n in self.store.lesson_numbers(week_key, day)
+            if lesson_subject(day, n, self.store.get(week_key, day, n)["subject"])
+        )
+
+    def tomorrow_lessons_count(self):
+        """НОВОЕ: подсчитывает количество уроков на завтра."""
+        tomorrow = date.today() + timedelta(days=1)
+        if tomorrow.weekday() >= 6:
+            return 0
+        day = DAYS[tomorrow.weekday()]
+        week_key = monday_of(tomorrow).isoformat()
         return sum(
             1 for n in self.store.lesson_numbers(week_key, day)
             if lesson_subject(day, n, self.store.get(week_key, day, n)["subject"])
@@ -1049,8 +1147,8 @@ class DiaryApp:
                         height=avatar_size,
                         border_radius=16 if tablet else 14,
                         bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY),
-                        border=ft.Border.all(1.5, ft.Colors.PRIMARY),
-                        alignment=ft.Alignment(0, 0),
+                        border=ft.border.all(1.5, ft.Colors.PRIMARY),
+                        alignment=ft.alignment.center,
                         content=ft.Text(
                             initial,
                             size=26 if tablet else 21,
@@ -1068,7 +1166,7 @@ class DiaryApp:
                             ft.Row(
                                 [
                                     ft.Container(
-                                        padding=ft.Padding(10, 3, 10, 3),
+                                        padding=ft.padding.only(left=10, right=10, top=3, bottom=3),
                                         border_radius=8,
                                         bgcolor=ft.Colors.PRIMARY,
                                         content=ft.Text(
@@ -1097,11 +1195,158 @@ class DiaryApp:
             padding=header_padding,
         )
 
+    def tomorrow_card(self):
+        """НОВОЕ: карточка с домашними заданиями на завтра с возможностью отметить выполнение."""
+        tomorrow = date.today() + timedelta(days=1)
+
+        # Воскресенье — выходной
+        if tomorrow.weekday() == 6:
+            return self.card_box(
+                ft.Row(
+                    [
+                        ft.Container(
+                            width=44,
+                            height=44,
+                            border_radius=12,
+                            bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY),
+                            alignment=ft.alignment.center,
+                            content=ft.Icon(ft.Icons.BEDTIME, color=ft.Colors.PRIMARY, size=22),
+                        ),
+                        ft.Column(
+                            [
+                                ft.Text("Завтра выходной", size=16, weight=ft.FontWeight.BOLD),
+                                ft.Text("Воскресенье — время отдыхать", size=12, color=ft.Colors.OUTLINE),
+                            ],
+                            spacing=2,
+                            expand=True,
+                        ),
+                    ],
+                    spacing=12,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
+
+        homework = self.store.homework_for_date(tomorrow)
+        day_name = DAYS[tomorrow.weekday()]
+
+        header = ft.Row(
+            [
+                ft.Container(
+                    width=44,
+                    height=44,
+                    border_radius=12,
+                    bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY),
+                    alignment=ft.alignment.center,
+                    content=ft.Icon(ft.Icons.SCHOOL, color=ft.Colors.PRIMARY, size=22),
+                ),
+                ft.Column(
+                    [
+                        ft.Text(
+                            f"Завтра: {day_name}, {tomorrow.day} {MONTHS[tomorrow.month - 1]}",
+                            size=16,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                        ft.Text(
+                            f"{len(homework)} {homework_word(len(homework))}" if homework else "ДЗ не задано",
+                            size=12,
+                            color=ft.Colors.OUTLINE,
+                        ),
+                    ],
+                    spacing=2,
+                    expand=True,
+                ),
+            ],
+            spacing=12,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        if not homework:
+            body = ft.Text(
+                "На завтра заданий нет — можно расслабиться!",
+                size=13,
+                color=ft.Colors.OUTLINE,
+            )
+        else:
+            items = []
+            for item in homework:
+                # Определяем цвет акцента по номеру урока
+                accent = ft.Colors.PRIMARY
+                items.append(
+                    ft.Container(
+                        padding=12,
+                        border_radius=10,
+                        bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.OUTLINE),
+                        border=ft.border.all(
+                            1,
+                            ft.Colors.with_opacity(0.1, ft.Colors.OUTLINE),
+                        ),
+                        content=ft.Row(
+                            [
+                                ft.Checkbox(
+                                    value=item["done"],
+                                    on_change=lambda e, w=item["week"], d=item["day"], n=item["number"]: self.toggle_homework_done(w, d, n, e.control.value),
+                                ),
+                                ft.Container(
+                                    width=36,
+                                    height=36,
+                                    border_radius=10,
+                                    bgcolor=ft.Colors.with_opacity(0.15, accent),
+                                    alignment=ft.alignment.center,
+                                    content=ft.Text(
+                                        f"0{item['number']}",
+                                        size=13,
+                                        weight=ft.FontWeight.BOLD,
+                                        color=accent,
+                                    ),
+                                ),
+                                ft.Column(
+                                    [
+                                        ft.Text(item["subject"], size=14, weight=ft.FontWeight.BOLD),
+                                        ft.Text(
+                                            item["hw"],
+                                            size=13,
+                                            color=ft.Colors.ON_SURFACE_VARIANT,
+                                            max_lines=3,
+                                            overflow=ft.TextOverflow.ELLIPSIS,
+                                        ),
+                                    ],
+                                    spacing=4,
+                                    expand=True,
+                                ),
+                                ft.IconButton(
+                                    icon=ft.Icons.CHEVRON_RIGHT,
+                                    icon_size=18,
+                                    tooltip="Открыть урок",
+                                    on_click=lambda e, w=item["week"], d=item["day"], n=item["number"]: self.open_lesson(w, d, n),
+                                ),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=8,
+                        ),
+                    )
+                )
+            body = ft.Column(items, spacing=8)
+
+        return self.card_box(
+            ft.Column(
+                [header, ft.Divider(height=1), body],
+                spacing=12,
+            )
+        )
+
+    def toggle_homework_done(self, week, day, number, done):
+        """НОВОЕ: обработчик чекбокса выполнения ДЗ."""
+        self.run_action(lambda: self.store.set_homework_done(week, day, number, done))
+
     def kpi_row(self, stats):
         tablet = self.is_tablet()
         avg_str = f"{stats['average']:.2f}" if stats["grades"] else "—"
         lessons = self.today_lessons_count()
         lessons_str = str(lessons) if lessons else "Выходной"
+
+        # НОВОЕ: уроки на завтра
+        lessons_tomorrow = self.tomorrow_lessons_count()
+        lessons_tomorrow_str = str(lessons_tomorrow) if lessons_tomorrow else "Выходной"
 
         def metric(icon, label, value, accent=ft.Colors.PRIMARY):
             if tablet:
@@ -1110,7 +1355,13 @@ class DiaryApp:
                     padding=18,
                     border_radius=14,
                     bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-                    border=ft.Border.all(1, ft.Colors.with_opacity(0.12, ft.Colors.OUTLINE)),
+                    border=ft.border.all(1, ft.Colors.with_opacity(0.12, ft.Colors.OUTLINE)),
+                    shadow=ft.BoxShadow(
+                        spread_radius=0,
+                        blur_radius=10,
+                        color=ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
+                        offset=ft.Offset(0, 3),
+                    ),
                     content=ft.Column(
                         [
                             ft.Row(
@@ -1126,7 +1377,7 @@ class DiaryApp:
                 padding=14,
                 border_radius=14,
                 bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-                border=ft.Border.all(1, ft.Colors.with_opacity(0.12, ft.Colors.OUTLINE)),
+                border=ft.border.all(1, ft.Colors.with_opacity(0.12, ft.Colors.OUTLINE)),
                 content=ft.Row(
                     [
                         ft.Icon(icon, size=20, color=accent),
@@ -1139,9 +1390,14 @@ class DiaryApp:
             )
 
         items = [
-            metric(ft.Icons.INSIGHTS, "Ср. балл", avg_str, grade_color(stats["average"]) if stats["grades"] else ft.Colors.PRIMARY),
+            metric(
+                ft.Icons.INSIGHTS,
+                "Ср. балл",
+                avg_str,
+                grade_color(stats["average"]) if stats["grades"] else ft.Colors.PRIMARY,
+            ),
             metric(ft.Icons.TODAY, "Уроков сегодня", lessons_str),
-            metric(ft.Icons.ASSIGNMENT_TURNED_IN, "Д/З", str(stats["homework"])),
+            metric(ft.Icons.EVENT_NOTE, "Уроков завтра", lessons_tomorrow_str),
         ]
 
         if tablet:
@@ -1188,7 +1444,7 @@ class DiaryApp:
                         expand=True,
                     ),
                     ft.Container(
-                        padding=ft.Padding(10, 4, 10, 4),
+                        padding=ft.padding.only(left=10, right=10, top=4, bottom=4),
                         border_radius=8,
                         bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY) if streak(h["done"], today) else ft.Colors.TRANSPARENT,
                         content=ft.Text(
@@ -1237,7 +1493,7 @@ class DiaryApp:
                 padding=16 if tablet else 12,
                 border_radius=14,
                 bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY) if done else ft.Colors.SURFACE_CONTAINER_LOW,
-                border=ft.Border.all(
+                border=ft.border.all(
                     1,
                     ft.Colors.PRIMARY if done else ft.Colors.with_opacity(0.1, ft.Colors.OUTLINE),
                 ),
@@ -1405,8 +1661,8 @@ class DiaryApp:
             "Твоё имя",
             ft.Container(width=340, content=field),
             [
-                text_button("Отмена", on_click=lambda e: self.page.pop_dialog()),
-                ft.Button(content="Сохранить", on_click=lambda e: self.run_action(lambda: self.store.set_name(field.value), dialog=True)),
+                text_button("Отмена", on_click=lambda e: self.page.close(self.page.overlay[-1] if self.page.overlay else None)),
+                ft.ElevatedButton("Сохранить", on_click=lambda e: self.run_action(lambda: self.store.set_name(field.value), dialog=True)),
             ],
         )
 
@@ -1416,9 +1672,9 @@ class DiaryApp:
             "Новая привычка" if habit is None else "Изменить привычку",
             ft.Container(width=340, content=field),
             [
-                text_button("Отмена", on_click=lambda e: self.page.pop_dialog()),
-                ft.Button(
-                    content="Сохранить",
+                text_button("Отмена", on_click=lambda e: self.page.close(self.page.overlay[-1] if self.page.overlay else None)),
+                ft.ElevatedButton(
+                    "Сохранить",
                     on_click=lambda e: self.run_action(
                         lambda: self.store.add_habit(field.value) if habit is None else self.store.rename_habit(habit["id"], field.value),
                         dialog=True,
@@ -1440,9 +1696,9 @@ class DiaryApp:
                 content=ft.Column([name_f, ft.Row([time_f, dose_f], wrap=True), note_f], tight=True, spacing=12),
             ),
             [
-                text_button("Отмена", on_click=lambda e: self.page.pop_dialog()),
-                ft.Button(
-                    content="Сохранить",
+                text_button("Отмена", on_click=lambda e: self.page.close(self.page.overlay[-1] if self.page.overlay else None)),
+                ft.ElevatedButton(
+                    "Сохранить",
                     on_click=lambda e: self.run_action(
                         lambda: self.store.add_pill(name_f.value, time_f.value, dose_f.value, note_f.value)
                         if pill is None else self.store.update_pill(pill["id"], name_f.value, time_f.value, dose_f.value, note_f.value),
@@ -1457,10 +1713,12 @@ class DiaryApp:
             title,
             ft.Text(text),
             [
-                text_button("Отмена", on_click=lambda e: self.page.pop_dialog()),
-                ft.Button(content="Удалить", on_click=lambda e: self.run_action(action, dialog=True)),
+                text_button("Отмена", on_click=lambda e: self.page.close(self.page.overlay[-1] if self.page.overlay else None)),
+                ft.ElevatedButton("Удалить", on_click=lambda e: self.run_action(action, dialog=True)),
             ],
         )
+
+    # --- ВКЛАДКА «УЧЁБА» ---
 
     def render_school(self):
         if self.selected_subject is not None:
@@ -1468,7 +1726,7 @@ class DiaryApp:
             return
 
         tabs = ft.SegmentedButton(
-            selected=[self.school_tab],
+            selected={self.school_tab},
             segments=[
                 ft.Segment(value="schedule", label=ft.Text("Расписание"), icon=ft.Icon(ft.Icons.CALENDAR_VIEW_DAY)),
                 ft.Segment(value="subjects", label=ft.Text("Предметы"), icon=ft.Icon(ft.Icons.ANALYTICS_OUTLINED)),
@@ -1598,10 +1856,10 @@ class DiaryApp:
             )
             box = ft.Container(
                 expand=True,
-                padding=ft.Padding(0, 10, 0, 10),
+                padding=ft.padding.only(top=10, bottom=10),
                 border_radius=12,
                 bgcolor=ft.Colors.PRIMARY if active else ft.Colors.SURFACE_CONTAINER_LOW,
-                border=ft.Border.all(1.5, ft.Colors.PRIMARY if is_today else ft.Colors.TRANSPARENT),
+                border=ft.border.all(1.5, ft.Colors.PRIMARY if is_today else ft.Colors.TRANSPARENT),
                 on_click=lambda e, i=idx: self.select_day(i),
                 content=ft.Column(
                     [short_txt, num_txt],
@@ -1667,7 +1925,7 @@ class DiaryApp:
                 ft.Text(f"{day}, {current_date.day} {MONTHS[current_date.month - 1]}", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.Container(
                     visible=current_date == date.today(),
-                    padding=ft.Padding(12, 4, 12, 4),
+                    padding=ft.padding.only(left=12, right=12, top=4, bottom=4),
                     border_radius=8,
                     bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY),
                     content=ft.Text("СЕГОДНЯ", color=ft.Colors.PRIMARY, size=11, weight=ft.FontWeight.BOLD),
@@ -1688,7 +1946,7 @@ class DiaryApp:
                 ft.Column(
                     [
                         header,
-                        ft.Container(padding=28, alignment=ft.Alignment(0, 0), content=ft.Text("Занятий нет", color=ft.Colors.OUTLINE)),
+                        ft.Container(padding=28, alignment=ft.alignment.center, content=ft.Text("Занятий нет", color=ft.Colors.OUTLINE)),
                     ],
                     spacing=10,
                 )
@@ -1711,8 +1969,8 @@ class DiaryApp:
                 height=28,
                 border_radius=8,
                 bgcolor=ft.Colors.with_opacity(0.18, grade_color(item["value"])),
-                border=ft.Border.all(1, grade_color(item["value"])),
-                alignment=ft.Alignment(0, 0),
+                border=ft.border.all(1, grade_color(item["value"])),
+                alignment=ft.alignment.center,
                 content=ft.Text(str(item["value"]), size=13, weight=ft.FontWeight.BOLD, color=grade_color(item["value"])),
             )
             for item in cell["grades"]
@@ -1785,14 +2043,14 @@ class DiaryApp:
             "Домашнее задание",
             ft.Container(width=420, content=field),
             [
-                text_button("Отмена", on_click=lambda e: self.page.pop_dialog()),
-                ft.Button(content="Сохранить", on_click=save),
+                text_button("Отмена", on_click=lambda e: self.page.close(self.page.overlay[-1] if self.page.overlay else None)),
+                ft.ElevatedButton("Сохранить", on_click=save),
             ],
         )
 
     def confirm_delete_grade(self, week, day, number, grade_id, description, on_done=None):
         def confirm(event):
-            self.page.pop_dialog()
+            self.page.close(self.page.overlay[-1] if self.page.overlay else None)
             try:
                 self.store.delete_grade(week, day, number, grade_id)
             except Exception as error:
@@ -1807,8 +2065,8 @@ class DiaryApp:
             "Удалить оценку?",
             ft.Text(f"Оценка {description} будет удалена."),
             [
-                text_button("Отмена", on_click=lambda e: self.page.pop_dialog()),
-                ft.Button(content="Удалить", on_click=confirm),
+                text_button("Отмена", on_click=lambda e: self.page.close(self.page.overlay[-1] if self.page.overlay else None)),
+                ft.ElevatedButton("Удалить", on_click=confirm),
             ],
         )
 
@@ -1871,7 +2129,7 @@ class DiaryApp:
             except Exception as error:
                 self.snack(str(error))
                 return
-            self.page.pop_dialog()
+            self.page.close(self.page.overlay[-1] if self.page.overlay else None)
             self.render_school()
             self.snack("Оценка обновлена" if editing else "Оценка добавлена")
 
@@ -1893,8 +2151,8 @@ class DiaryApp:
                 ),
             ),
             [
-                text_button("Закрыть", on_click=lambda e: self.page.pop_dialog()),
-                ft.Button(content="Сохранить", on_click=save),
+                text_button("Закрыть", on_click=lambda e: self.page.close(self.page.overlay[-1] if self.page.overlay else None)),
+                ft.ElevatedButton("Сохранить", on_click=save),
             ],
         )
 
@@ -1914,7 +2172,7 @@ class DiaryApp:
                     padding=14,
                     border_radius=14,
                     bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-                    border=ft.Border.all(1, ft.Colors.with_opacity(0.12, ft.Colors.OUTLINE)),
+                    border=ft.border.all(1, ft.Colors.with_opacity(0.12, ft.Colors.OUTLINE)),
                     on_click=lambda e, name=subject: self.open_subject(name),
                     content=ft.Row(
                         [
@@ -1927,7 +2185,7 @@ class DiaryApp:
                                 expand=True,
                             ),
                             ft.Container(
-                                padding=ft.Padding(12, 6, 12, 6),
+                                padding=ft.padding.only(left=12, right=12, top=6, bottom=6),
                                 border_radius=10,
                                 bgcolor=ft.Colors.with_opacity(0.15, accent),
                                 content=ft.Text(f"{avg:.2f}" if avg is not None else "—", weight=ft.FontWeight.BOLD, color=accent),
@@ -1967,8 +2225,8 @@ class DiaryApp:
                         height=44,
                         border_radius=12,
                         bgcolor=ft.Colors.with_opacity(0.18, color),
-                        border=ft.Border.all(1.5, color),
-                        alignment=ft.Alignment(0, 0),
+                        border=ft.border.all(1.5, color),
+                        alignment=ft.alignment.center,
                         content=ft.Text(str(item["value"]), color=color, size=19, weight=ft.FontWeight.BOLD),
                     ),
                     ft.Column(
@@ -2045,7 +2303,7 @@ class DiaryApp:
                     ft.Column(
                         [
                             ft.Text("Калькулятор цели", weight=ft.FontWeight.BOLD, size=15),
-                            ft.Row([target_f, ft.Button(content="Рассчитать", icon=ft.Icons.CALCULATE, on_click=calculate)], wrap=True),
+                            ft.Row([target_f, ft.ElevatedButton("Рассчитать", icon=ft.Icons.CALCULATE, on_click=calculate)], wrap=True),
                             plan_text,
                         ],
                         spacing=10,
@@ -2065,6 +2323,8 @@ class DiaryApp:
         self.school_tab = "subjects"
         self.render_school()
 
+
+# --- Точка входа ---
 
 def check_auth_and_run(page: ft.Page):
     store = Store(data_path())
